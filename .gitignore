@@ -1,0 +1,7 @@
+*.pyc
+.env
+__pycache__/
+parakeet-tdt-0.6b-v3-onnx/
+Piper/
+Qwen3.5-9B/
+

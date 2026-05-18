@@ -1,0 +1,26 @@
+services:
+  qwen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qwen35-9B
+    environment:
+      - MODEL_PATH=/Qwen3.5-9B
+      - PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
+    volumes:
+      - ./Qwen3.5-9B:/Qwen3.5-9B:Z
+      - ./Piper:/Piper:Z
+      - ./parakeet-tdt-0.6b-v3-onnx:/parakeet-tdt-0.6b-v3-onnx:Z
+      - ./app:/app:Z
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
