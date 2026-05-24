@@ -27,12 +27,18 @@ def load_model(model_path=MODEL_PATH):
     return tokenizer, model
 
 
-def generate_reply(tokenizer, model, messages, max_new_tokens, enable_thinking):
+def generate_reply(tokenizer,
+                   model,
+                   messages,
+                   max_new_tokens,
+                   enable_thinking,
+                   tools=None):
     prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True,
         enable_thinking=enable_thinking,
+        tools=tools
     )
 
     inputs = tokenizer(

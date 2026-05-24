@@ -7,14 +7,16 @@ import conversation as convo
 import llm
 import stt
 import tts
+import tools
 
 
 SYSTEM_PROMPT = (
     "You are a concise local voice assistant. "
-    "Keep responses conversational and brief. "
-    "Respond using plain spoken text only. "
+    "Keep answers short and natural. "
+    "All responses must sound natural when read out loud. "
     "Do not use markdown, emojis, emoticons, "
-    "asterisks, or special formatting."
+    "asterisks, or special formatting. "
+    "Always use tools whenever they are relevant."
 )
 
 
@@ -50,17 +52,50 @@ def main():
 
         conversation.add_user_message(user_text)
 
-        reply = llm.generate_reply(
-            tokenizer=tokenizer,
-            model=model,
-            messages=conversation.messages,
-            max_new_tokens=1024,
-            enable_thinking=False
-        )
+        reply = None
+        
+        for _ in range(3):
+            generated = llm.generate_reply(
+                tokenizer=tokenizer,
+                model=model,
+                messages=conversation.messages,
+                max_new_tokens=1024,
+                enable_thinking=False,
+                tools=tools.get_tools(),
+            )
 
+            tool_call = tools.parse_tool_call(generated)
+        
+            if tool_call is None:
+                reply = generated
+                break
+        
+            print(f"Assistant (tool): {generated}")
+
+            tool_result = tools.run_tool(
+                tool_call["name"],
+                tool_call.get("arguments"),
+            )
+        
+            conversation.add_assistant_message(generated)
+        
+            conversation.messages.append(
+                {
+                    "role": "tool",
+                    "name": tool_call["name"],
+                    "content": str(tool_result),
+                }
+            )
+            
+            print(f"Tool result: {tool_result}")
+        
+        if reply is None:
+            reply = "I could not complete that request."
+        
         print(f"Assistant: {reply}")
-
+        
         conversation.add_assistant_message(reply)
+
 
         audio, audio_sample_rate = tts_engine.synthesize(reply)
 

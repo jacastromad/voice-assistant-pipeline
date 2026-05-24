@@ -24,4 +24,4 @@ RUN pip install --no-cache-dir \
     "piper-tts" \
     "onnx-asr[cpu]"
 
-CMD ["python", "app.py"]
+CMD ["python", "main.py"]
