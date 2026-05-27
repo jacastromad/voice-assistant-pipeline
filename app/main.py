@@ -4,10 +4,10 @@
 
 import audio_io as aio
 import conversation as convo
-import llm
+from llm import load_model, generate
 import stt
 import tts
-import tools
+from tools import get_tools, parse_tool_call, run_tool
 
 
 SYSTEM_PROMPT = (
@@ -15,16 +15,106 @@ SYSTEM_PROMPT = (
     "Keep answers short and natural. "
     "All responses must sound natural when read out loud. "
     "Do not use markdown, emojis, emoticons, "
-    "asterisks, or special formatting. "
-    "Always use tools whenever they are relevant."
+    "asterisks, or special formatting."
 )
+
+
+def build_router_system_prompt(tools):
+    tool_blocks = []
+
+    for tool in tools:
+        function = tool["function"]
+        name = function["name"]
+        description = function.get("description", "")
+
+        parameters = function.get("parameters", {})
+        properties = parameters.get("properties", {})
+
+        parameter_lines = []
+        for param_name, param_schema in properties.items():
+            param_description = param_schema.get("description", "")
+            parameter_lines.append(
+                f"<parameter>{param_name}: {param_description}</parameter>"
+            )
+
+        parameter_text = "\n".join(parameter_lines)
+
+        tool_blocks.append(
+            f"""<tool>
+<name>{name}</name>
+<description>{description}</description>
+{parameter_text}
+</tool>"""
+        )
+
+    tools_text = "\n\n".join(tool_blocks)
+
+    return f"""You are a tool router.
+
+Your only task is to decide whether the user's request requires a tool.
+
+Do not answer the user.
+Do not explain your reasoning.
+Do not use JSON.
+Do not use Markdown.
+
+If no tool is needed, output exactly:
+
+<tool_call>
+<function=none>
+</function>
+</tool_call>
+
+If a tool is needed, output exactly:
+
+<tool_call>
+<function=tool_name>
+</function>
+</tool_call>
+
+If a tool needs parameters, output exactly:
+
+<tool_call>
+<function=tool_name>
+<parameter=argument_name>
+argument_value
+</parameter>
+</function>
+</tool_call>
+
+Available tools:
+
+<tools>
+{tools_text}
+</tools>
+
+Rules:
+- Output exactly one <tool_call> block.
+- Choose exactly one function.
+- Use <function=none> only if no tool is required.
+- Never answer the user directly.
+- Never include text before or after the tool call.
+"""
+
+
+def build_router_messages(conversation, tools):
+    return [
+        {
+            "role": "system",
+            "content": build_router_system_prompt(tools),
+        },
+        {
+            "role": "user",
+            "content": conversation.get_last_user_message(),
+        },
+    ]
 
 
 def main():
     device, device_info = aio.choose_device()
 
     vad_model = aio.load_silero_vad()
-    tokenizer, model = llm.load_model()
+    tokenizer, model = load_model()
     tts_engine = tts.PiperTTS()
 
     conversation = convo.Conversation(
@@ -48,54 +138,54 @@ def main():
             sample_rate,
         )
 
-        print(f"\nUser: {user_text}")
+        if not user_text.strip():
+            continue
 
         conversation.add_user_message(user_text)
 
-        reply = None
-        
-        for _ in range(3):
-            generated = llm.generate_reply(
-                tokenizer=tokenizer,
-                model=model,
-                messages=conversation.messages,
-                max_new_tokens=1024,
-                enable_thinking=False,
-                tools=tools.get_tools(),
-            )
+        print(f"\nUser: {user_text}")
 
-            tool_call = tools.parse_tool_call(generated)
-        
-            if tool_call is None:
-                reply = generated
-                break
-        
-            print(f"Assistant (tool): {generated}")
+        router_messages = build_router_messages(conversation, get_tools())
 
-            tool_result = tools.run_tool(
+        router_output = generate(
+            tokenizer=tokenizer,
+            model=model,
+            messages=router_messages,
+            max_new_tokens=128,
+            enable_thinking=False,
+            tools=None,
+            do_sample=False,
+        )
+
+        tool_call = parse_tool_call(router_output)
+
+        if tool_call:
+            tool_result = run_tool(
                 tool_call["name"],
-                tool_call.get("arguments"),
+                tool_call.get("arguments", {}),
             )
-        
-            conversation.add_assistant_message(generated)
-        
-            conversation.messages.append(
-                {
-                    "role": "tool",
-                    "name": tool_call["name"],
-                    "content": str(tool_result),
-                }
-            )
-            
-            print(f"Tool result: {tool_result}")
-        
-        if reply is None:
-            reply = "I could not complete that request."
-        
-        print(f"Assistant: {reply}")
+
+            conversation.add_assistant_message(router_output)
+            print(f"Tool call: {router_output}")
+            conversation.add_tool_message(tool_call["name"], tool_result)
+            print(f"Tool: {tool_result}")
+
+
+        reply = generate(
+            tokenizer=tokenizer,
+            model=model,
+            messages=conversation.messages,
+            max_new_tokens=512,
+            enable_thinking=False,
+            tools=None,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+        )
         
         conversation.add_assistant_message(reply)
 
+        print(f"Assistant: {reply}")
 
         audio, audio_sample_rate = tts_engine.synthesize(reply)
 
@@ -119,3 +209,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

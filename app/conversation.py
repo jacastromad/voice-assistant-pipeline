@@ -33,10 +33,21 @@ class Conversation:
         self.messages.append({"role": "assistant", "content": text})
         self.trim()
 
+    def add_tool_message(self, name, text):
+        self.messages.append({"role": "tool", "name": name, "content": text})
+        self.trim()
+
     def add_exchange(self, user_text, assistant_text):
         self.messages.append({"role": "user", "content": user_text})
         self.messages.append({"role": "assistant", "content": assistant_text})
         self.trim()
+
+    def get_last_user_message(self):
+        for message in reversed(self.messages):
+            if message.get("role") == "user":
+                return message.get("content", "")
+    
+        return ""
 
     def trim(self):
         if len(self.messages) <= self.max_messages:
@@ -55,3 +66,4 @@ class Conversation:
 
         if self.system_prompt:
             self.set_system_prompt(self.system_prompt)
+

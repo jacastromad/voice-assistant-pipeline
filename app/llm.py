@@ -1,9 +1,8 @@
 # llm.py
 #
-# Text LLM inference.
+# Text LLM inference and tool routing.
 
 import os
-
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -20,25 +19,30 @@ def load_model(model_path=MODEL_PATH):
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
         device_map="auto",
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         trust_remote_code=True,
     )
 
     return tokenizer, model
 
 
-def generate_reply(tokenizer,
-                   model,
-                   messages,
-                   max_new_tokens,
-                   enable_thinking,
-                   tools=None):
+def generate(
+    tokenizer,
+    model,
+    messages,
+    max_new_tokens,
+    enable_thinking=False,
+    tools=None,
+    do_sample=False,
+    temperature=None,
+    top_p=None,
+):
     prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True,
         enable_thinking=enable_thinking,
-        tools=tools
+        tools=tools,
     )
 
     inputs = tokenizer(
@@ -46,19 +50,23 @@ def generate_reply(tokenizer,
         return_tensors="pt",
     ).to(model.device)
 
+    generate_kwargs = {
+        **inputs,
+        "max_new_tokens": max_new_tokens,
+        "do_sample": do_sample,
+        "pad_token_id": tokenizer.eos_token_id,
+    }
+
+    if do_sample:
+        generate_kwargs["temperature"] = temperature
+        generate_kwargs["top_p"] = top_p
+
     with torch.no_grad():
-        output_ids = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            pad_token_id=tokenizer.eos_token_id,
-        )
+        output_ids = model.generate(**generate_kwargs)
 
     new_tokens = output_ids[0][inputs["input_ids"].shape[-1]:]
 
-    return tokenizer.decode(new_tokens, skip_special_tokens=True)
+    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
 def test_llm():
@@ -74,11 +82,17 @@ def test_llm():
         },
         {
             "role": "user",
-            "content": "Say hello in one short sentence.",
+            "content": "Introduce yourself in a short sentence.",
         },
     ]
 
-    reply = generate_reply(tokenizer, model, messages, 128, False)
+    reply = generate(
+        tokenizer=tokenizer,
+        model=model,
+        messages=messages,
+        max_new_tokens=128,
+        enable_thinking=False,
+    )
 
     print(reply)
 

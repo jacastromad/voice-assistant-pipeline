@@ -1,8 +1,10 @@
 # tools.py
 #
-# Agent tools
+# Agent tools.
 
+import re
 from datetime import datetime
+import sys
 
 
 def get_datetime():
@@ -10,12 +12,32 @@ def get_datetime():
     return now.strftime("%A, %d %B %Y, %H:%M")
 
 
+def shutdown():
+    sys.exit(0)
+
+
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "get_datetime",
-            "description": "Get the current system date and time.",
+            "description": (
+                "Get the current system date and time. "
+                "Use this when the user asks for the current time, current date, "
+                "today, tomorrow, yesterday, weekday, or relative date resolution."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shutdown",
+            "description": "Shutdown assistant.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -28,6 +50,7 @@ TOOLS = [
 
 TOOL_REGISTRY = {
     "get_datetime": get_datetime,
+    "shutdown": shutdown,
 }
 
 
@@ -48,29 +71,71 @@ def run_tool(name, arguments=None):
 
 
 def parse_tool_call(text):
-    start = text.find("<tool_call>")
-    end = text.find("</tool_call>")
+    """
+    Parse Qwen XML-style tool calls.
 
-    if start == -1 or end == -1:
+    Supported format:
+
+    <tool_call>
+    <function=get_datetime>
+    </function>
+    </tool_call>
+
+    Tool calls with parameters can be added later using:
+
+    <tool_call>
+    <function=tool_name>
+    <parameter=argument_name>
+    argument_value
+    </parameter>
+    </function>
+    </tool_call>
+    """
+
+    if not text:
         return None
 
-    block = text[start:end]
+    tool_match = re.search(
+        r"<tool_call>\s*(.*?)\s*</tool_call>",
+        text,
+        flags=re.DOTALL,
+    )
 
-    function_prefix = "<function="
-    function_start = block.find(function_prefix)
-
-    if function_start == -1:
+    if not tool_match:
         return None
 
-    function_start += len(function_prefix)
-    function_end = block.find(">", function_start)
+    block = tool_match.group(1)
 
-    if function_end == -1:
+    function_match = re.search(
+        r"<function=([^>\s]+)>",
+        block,
+        flags=re.DOTALL,
+    )
+
+    if not function_match:
         return None
 
-    name = block[function_start:function_end].strip()
+    name = function_match.group(1).strip()
+
+    if name == "none":
+        return None
+
+    arguments = {}
+
+    parameter_matches = re.finditer(
+        r"<parameter=([^>\s]+)>\s*(.*?)\s*</parameter>",
+        block,
+        flags=re.DOTALL,
+    )
+
+    for parameter_match in parameter_matches:
+        key = parameter_match.group(1).strip()
+        value = parameter_match.group(2).strip()
+        arguments[key] = value
 
     return {
         "name": name,
-        "arguments": {},
+        "arguments": arguments,
     }
+
+
