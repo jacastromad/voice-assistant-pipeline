@@ -10,6 +10,7 @@ services:
     volumes:
       - ./Qwen3.5-9B:/Qwen3.5-9B:Z
       - ./Piper:/Piper:Z
+      - ./Kokoro-82M-v1.0-ONNX:/Kokoro-82M-v1.0-ONNX:Z
       - ./parakeet-tdt-0.6b-v3-onnx:/parakeet-tdt-0.6b-v3-onnx:Z
       - ./app:/app:Z
     devices:

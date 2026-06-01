@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     portaudio19-dev \
     alsa-utils \
     pulseaudio-utils \
+    espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
@@ -22,6 +23,10 @@ RUN pip install --no-cache-dir \
     "numpy" \
     "silero-vad" \
     "piper-tts" \
-    "onnx-asr[cpu]"
+    "onnx-asr[cpu]" \
+    "onnxruntime" \
+    "misaki[en]"
+
+RUN python -m spacy download en_core_web_sm
 
 CMD ["python", "main.py"]

@@ -44,6 +44,7 @@ parakeet-tdt-0.6b-v3-onnx/
 ```bash
 git clone https://huggingface.co/Qwen/Qwen3.5-9B
 git clone https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
+git clone https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
 ```
 
 * Download a Piper voice into Piper/
