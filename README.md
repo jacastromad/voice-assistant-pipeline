@@ -4,7 +4,7 @@ A template to build your own local offline voice assistant.
 
 This example uses:
 
-* Qwen3.5
+* Qwen3.5 (~18 GB VRAM in FP16)
 * Parakeet STT
 * Piper TTS
 * Silero VAD
