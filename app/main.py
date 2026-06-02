@@ -7,15 +7,19 @@ import conversation as convo
 from llm import load_model, generate
 import stt
 import tts
-from tools import get_tools, parse_tool_call, run_tool
+from tools import ToolRunner, parse_tool_call
 
 
 SYSTEM_PROMPT = (
-    "You are a concise local voice assistant. "
-    "Keep answers short and natural. "
+    "You are a voice assistant. Be concise. "
+    "Truthfulness is more important than being agreeable, or reassuring. "
+    "When the user is wrong, explain why briefly instead of agreeing. "
+    "Always give direct short answers. Do not explain unless asked. "
+    "Do not provide aditional information beyond what was requested. "
     "All responses must sound natural when read out loud. "
-    "Do not use markdown, emojis, emoticons, "
-    "asterisks, or special formatting."
+    "Do not use markdown, emojis, asterisks, or special formatting. "
+    "No preambles, explanations, warnings, or follow-up suggestions "
+    "unless requested. "
 )
 
 
@@ -115,7 +119,8 @@ def main():
 
     vad_model = aio.load_silero_vad()
     tokenizer, model = load_model()
-    tts_engine = tts.PiperTTS()
+    tts_engine = tts.KokoroTTS()
+    tool_runner = ToolRunner(tts_engine)
 
     conversation = convo.Conversation(
         system_prompt=SYSTEM_PROMPT,
@@ -145,7 +150,7 @@ def main():
 
         print(f"\nUser: {user_text}")
 
-        router_messages = build_router_messages(conversation, get_tools())
+        router_messages = build_router_messages(conversation, tool_runner.get_tools())
 
         router_output = generate(
             tokenizer=tokenizer,
@@ -160,7 +165,7 @@ def main():
         tool_call = parse_tool_call(router_output)
 
         if tool_call:
-            tool_result = run_tool(
+            tool_result = tool_runner.run_tool(
                 tool_call["name"],
                 tool_call.get("arguments", {}),
             )
@@ -175,12 +180,12 @@ def main():
             tokenizer=tokenizer,
             model=model,
             messages=conversation.messages,
-            max_new_tokens=512,
+            max_new_tokens=64,
             enable_thinking=False,
             tools=None,
             do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
+            temperature=0.2,
+            top_p=0.8,
         )
         
         conversation.add_assistant_message(reply)

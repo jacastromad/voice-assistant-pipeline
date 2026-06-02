@@ -11,7 +11,7 @@ from piper import PiperVoice
 
 import json
 from onnxruntime import InferenceSession
-from misaki import en, espeak
+from misaki import espeak
 
 
 PIPER_MODEL = "/Piper/en_US-lessac-medium.onnx"
@@ -63,9 +63,9 @@ class KokoroTTS:
         )
 
         if language == "a":
-            self.g2p = en.G2P(british=False, unk="")
+            self.g2p = espeak.EspeakG2P(language="en-us")
         elif language == "b":
-            self.g2p = en.G2P(british=True, unk="")
+            self.g2p = espeak.EspeakG2P(language="en-gb")
         elif language == "e":
             self.g2p = espeak.EspeakG2P(language="es")
 

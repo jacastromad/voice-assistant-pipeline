@@ -16,6 +16,16 @@ def shutdown():
     sys.exit(0)
 
 
+def set_language(tts_engine, language):
+    language_names = {
+        "a": "English (American accent)",
+        "b": "English (British accent)",
+        "e": "Spanish",
+    }
+    tts_engine.set_language(language)
+    return f"Success. Voice language set to {language_names[language]}."
+
+
 TOOLS = [
     {
         "type": "function",
@@ -45,29 +55,55 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_language",
+            "description": (
+                "Set the voice language to british english, american english or "
+                "spanish. Use the parameter \"a\" for american english, \"b\" for "
+                "british english and \"e\" for spanish."
+            ),
+            "parameters": {
+            "type": "object",
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "enum": ["a", "b", "e"],
+                    "description": "Language to use."
+                }
+            },
+            "required": ["language"],
+            },
+        },
+    },
 ]
 
 
-TOOL_REGISTRY = {
-    "get_datetime": get_datetime,
-    "shutdown": shutdown,
-}
+class ToolRunner:
+    def __init__(self, tts_engine):
+        self.tts_engine = tts_engine
 
-
-def get_tools():
-    return TOOLS
-
-
-def run_tool(name, arguments=None):
-    if name not in TOOL_REGISTRY:
-        return {
-            "error": f"Unknown tool: {name}",
+        self.registry = {
+            "get_datetime": get_datetime,
+            "shutdown": shutdown,
+            "set_language": self._set_language,
         }
 
-    if arguments is None:
-        arguments = {}
+    def _set_language(self, language):
+        return set_language(self.tts_engine, language)
 
-    return TOOL_REGISTRY[name](**arguments)
+    def get_tools(self):
+        return TOOLS
+
+    def run_tool(self, name, arguments=None):
+        if name not in self.registry:
+            return {"error": f"Unknown tool: {name}"}
+
+        if arguments is None:
+            arguments = {}
+
+        return self.registry[name](**arguments)
 
 
 def parse_tool_call(text):
