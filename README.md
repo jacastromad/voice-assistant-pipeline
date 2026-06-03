@@ -1,6 +1,6 @@
 # Local Voice Assistant Template
 
-A template to build your own local offline voice assistant.
+A template to build your own local offline voice assistant with agent capabilities.
 
 This example uses:
 
@@ -15,6 +15,7 @@ Runs fully locally inside Docker.
 
 ## Features
 
+* Tool-using agent capabilities
 * Voice activity detection
 * Speech-to-text
 * Conversational memory
