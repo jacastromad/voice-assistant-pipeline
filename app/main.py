@@ -129,6 +129,8 @@ def main():
 
     sample_rate = int(device_info["default_samplerate"])
 
+    interruption_audio = None
+
     print("Ready.")
 
     while True:
@@ -136,7 +138,10 @@ def main():
             device,
             device_info,
             vad_model,
+            initial_audio=interruption_audio,
         )
+
+        interruption_audio = None
 
         user_text = stt.transcribe(
             utterance,
@@ -203,13 +208,16 @@ def main():
                 playback_sample_rate,
             )
 
-        aio.play_interruptible(
+        interruption_audio = aio.play_interruptible(
             device,
             device_info,
             vad_model,
             audio,
             playback_sample_rate,
         )
+
+        if interruption_audio is not None:
+            print("Playback interrupted.")
 
 
 if __name__ == "__main__":

@@ -8,11 +8,13 @@ import librosa
 import sounddevice as sd
 import torch
 from silero_vad import load_silero_vad
+from collections import deque
 
 VAD_SR = 16000
 VAD_CHUNK_SAMPLES = 512
-SPEECH_THRESHOLD = 0.5
+SPEECH_THRESHOLD = 0.35
 SILENCE_SECONDS = 0.8
+PRE_ROLL_SECONDS = 0.4
 
 
 def choose_device(device_id=None):
@@ -125,13 +127,22 @@ def vad_probability(vad_model, audio, sample_rate):
     return vad_model(tensor, VAD_SR).item()
 
 
-def capture_utterance(device, device_info, vad_model):
+def capture_utterance(device, device_info, vad_model, initial_audio=None):
     sample_rate = int(device_info["default_samplerate"])
     chunk_samples = chunk_samples_for_rate(sample_rate)
 
     speaking = False
     last_speech_time = None
     buffer = []
+
+
+    pre_roll_chunks = max(1, int(PRE_ROLL_SECONDS * sample_rate / chunk_samples))
+    pre_roll = deque(maxlen=pre_roll_chunks)
+
+    if initial_audio is not None:
+        speaking = True
+        last_speech_time = time.time()
+        buffer.append(initial_audio.copy())
 
     print("\nListening...")
 
@@ -149,12 +160,15 @@ def capture_utterance(device, device_info, vad_model):
             prob = vad_probability(vad_model, audio, sample_rate)
             now = time.time()
 
+            if not speaking:
+                pre_roll.append(audio.copy())
+
             if prob > SPEECH_THRESHOLD:
                 last_speech_time = now
 
                 if not speaking:
                     speaking = True
-                    buffer = []
+                    buffer = list(pre_roll)
                     print("Speech started")
 
                 buffer.append(audio.copy())
@@ -165,9 +179,6 @@ def capture_utterance(device, device_info, vad_model):
                 if last_speech_time and now - last_speech_time > SILENCE_SECONDS:
                     print("Speech stopped")
 
-                    if not buffer:
-                        return audio
-
                     return torch.cat([
                         torch.from_numpy(chunk)
                         for chunk in buffer
@@ -175,6 +186,74 @@ def capture_utterance(device, device_info, vad_model):
 
 
 def play_interruptible(device, device_info, vad_model, audio, playback_sample_rate):
+    input_sample_rate = int(device_info["default_samplerate"])
+    input_chunk_samples = chunk_samples_for_rate(input_sample_rate)
+    output_block_samples = chunk_samples_for_rate(playback_sample_rate)
+
+    pre_roll_chunks = max(
+        1,
+        int(PRE_ROLL_SECONDS * input_sample_rate / input_chunk_samples),
+    )
+    pre_roll = deque(maxlen=pre_roll_chunks)
+
+    with sd.InputStream(
+        device=device,
+        samplerate=input_sample_rate,
+        channels=1,
+        dtype="float32",
+        blocksize=input_chunk_samples,
+    ) as mic_stream, sd.OutputStream(
+        device=device,
+        samplerate=playback_sample_rate,
+        channels=audio.shape[1] if audio.ndim > 1 else 1,
+        dtype="float32",
+        blocksize=output_block_samples,
+    ) as out_stream:
+        pos = 0
+
+        while pos < len(audio):
+            mic_audio, _ = mic_stream.read(input_chunk_samples)
+            mic_audio = mic_audio[:, 0]
+
+            pre_roll.append(mic_audio.copy())
+
+            prob = vad_probability(vad_model, mic_audio, input_sample_rate)
+            peak = float(abs(mic_audio).max())
+
+            if prob > SPEECH_THRESHOLD and peak > 0.02:
+                return torch.cat([
+                    torch.from_numpy(chunk)
+                    for chunk in pre_roll
+                ]).numpy()
+
+            block = audio[pos:pos + output_block_samples]
+
+            if len(block) < output_block_samples:
+                padding_shape = (
+                    output_block_samples - len(block),
+                    audio.shape[1] if audio.ndim > 1 else 1,
+                )
+
+                padding = torch.zeros(padding_shape).numpy()
+
+                if audio.ndim == 1:
+                    block = torch.cat([
+                        torch.from_numpy(block),
+                        torch.from_numpy(padding[:, 0]),
+                    ]).numpy()
+                else:
+                    block = torch.cat([
+                        torch.from_numpy(block),
+                        torch.from_numpy(padding),
+                    ]).numpy()
+
+            out_stream.write(block)
+            pos += output_block_samples
+
+    return None
+
+
+def play_interruptible2(device, device_info, vad_model, audio, playback_sample_rate):
     input_sample_rate = int(device_info["default_samplerate"])
     input_chunk_samples = chunk_samples_for_rate(input_sample_rate)
     output_block_samples = chunk_samples_for_rate(playback_sample_rate)
@@ -202,7 +281,7 @@ def play_interruptible(device, device_info, vad_model, audio, playback_sample_ra
             peak = float(abs(mic_audio).max())
 
             if prob > SPEECH_THRESHOLD and peak > 0.02:
-                return True
+                return mic_audio.copy()
 
             block = audio[pos:pos + output_block_samples]
 
@@ -228,7 +307,7 @@ def play_interruptible(device, device_info, vad_model, audio, playback_sample_ra
             out_stream.write(block)
             pos += output_block_samples
 
-    return False
+    return None
 
 
 def test_vad(device, device_info):
@@ -308,7 +387,7 @@ def test_audio_io(device, device_info):
         int(device_info["default_samplerate"]),
     )
 
-    if interrupted:
+    if interrupted is not None:
         print("Playback interrupted.")
     else:
         print("Playback completed.")
