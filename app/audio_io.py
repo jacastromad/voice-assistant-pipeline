@@ -253,63 +253,6 @@ def play_interruptible(device, device_info, vad_model, audio, playback_sample_ra
     return None
 
 
-def play_interruptible2(device, device_info, vad_model, audio, playback_sample_rate):
-    input_sample_rate = int(device_info["default_samplerate"])
-    input_chunk_samples = chunk_samples_for_rate(input_sample_rate)
-    output_block_samples = chunk_samples_for_rate(playback_sample_rate)
-
-    with sd.InputStream(
-        device=device,
-        samplerate=input_sample_rate,
-        channels=1,
-        dtype="float32",
-        blocksize=input_chunk_samples,
-    ) as mic_stream, sd.OutputStream(
-        device=device,
-        samplerate=playback_sample_rate,
-        channels=audio.shape[1] if audio.ndim > 1 else 1,
-        dtype="float32",
-        blocksize=output_block_samples,
-    ) as out_stream:
-        pos = 0
-
-        while pos < len(audio):
-            mic_audio, _ = mic_stream.read(input_chunk_samples)
-            mic_audio = mic_audio[:, 0]
-
-            prob = vad_probability(vad_model, mic_audio, input_sample_rate)
-            peak = float(abs(mic_audio).max())
-
-            if prob > SPEECH_THRESHOLD and peak > 0.02:
-                return mic_audio.copy()
-
-            block = audio[pos:pos + output_block_samples]
-
-            if len(block) < output_block_samples:
-                padding_shape = (
-                    output_block_samples - len(block),
-                    audio.shape[1] if audio.ndim > 1 else 1,
-                )
-
-                padding = torch.zeros(padding_shape).numpy()
-
-                if audio.ndim == 1:
-                    block = torch.cat([
-                        torch.from_numpy(block),
-                        torch.from_numpy(padding[:, 0]),
-                    ]).numpy()
-                else:
-                    block = torch.cat([
-                        torch.from_numpy(block),
-                        torch.from_numpy(padding),
-                    ]).numpy()
-
-            out_stream.write(block)
-            pos += output_block_samples
-
-    return None
-
-
 def test_vad(device, device_info):
     sample_rate = int(device_info["default_samplerate"])
     chunk_samples = int(sample_rate * (VAD_CHUNK_SAMPLES / VAD_SR))
